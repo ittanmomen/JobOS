@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Menu,
+  ArrowRightLeft,
   MoreHorizontal,
   Calendar,
   Clock,
@@ -103,6 +104,7 @@ interface Opportunity {
   priority: "low" | "medium" | "high";
   updated_at: string;
   description?: string;
+  url?: string;
 }
 
 interface Contact {
@@ -707,6 +709,7 @@ const KanbanCard = ({
   onEdit,
   onDelete,
   onConvert,
+  onMoveClick,
 }: {
   item: any;
   onDragStart: (e: React.DragEvent, id: string) => void;
@@ -714,6 +717,7 @@ const KanbanCard = ({
   onEdit: (item: any) => void;
   onDelete: (id: string) => void;
   onConvert?: (item: any) => void;
+  onMoveClick?: (item: any) => void;
 }) => {
   const priorityColor =
     item.priority === "high"
@@ -747,6 +751,17 @@ const KanbanCard = ({
           </span>
         )}
         <div className="flex items-center gap-2">
+          {/* Mobile Move Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveClick && onMoveClick(item);
+            }}
+            className="md:hidden text-slate-400 hover:text-blue-600 transition-colors"
+            title="Move to Stage"
+          >
+            <ArrowRightLeft size={14} />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -780,6 +795,20 @@ const KanbanCard = ({
         {isContact && <Building2 size={10} />}
         {item.company_name || item.role_title}
       </p>
+
+      {/* Job URL Link - only for application opportunities */}
+      {!isContact && item.url && (
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 truncate"
+        >
+          <ExternalLink size={10} />
+          View Job Posting
+        </a>
+      )}
 
       {/* CONVERT BUTTON FOR QUALIFIED DISCOVERY OPPORTUNITIES */}
       {!isContact &&
@@ -829,6 +858,7 @@ const KanbanColumn = ({
   onEdit,
   onDelete,
   onConvert,
+  onMoveClick,
 }: any) => {
   const formattedStage = stage.replace(/_/g, " ");
 
@@ -856,6 +886,7 @@ const KanbanColumn = ({
             onEdit={onEdit}
             onDelete={onDelete}
             onConvert={onConvert}
+            onMoveClick={onMoveClick}
           />
         ))}
         {items.length === 0 && (
@@ -1190,6 +1221,7 @@ export default function App() {
     title: "",
     company: "",
     pipeline: "discovery" as PipelineType,
+    url: "",
   });
   const [newContactData, setNewContactData] = useState({
     name: "",
@@ -1207,6 +1239,13 @@ export default function App() {
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDate, setNewTaskDate] = useState("");
   const [newTaskComments, setNewTaskComments] = useState("");
+
+  // Mobile Move Modal
+  const [moveModal, setMoveModal] = useState<{
+    open: boolean;
+    item: any;
+    pipelineType: string;
+  } | null>(null);
 
   // --- INIT ---
   useEffect(() => {
@@ -1567,9 +1606,8 @@ export default function App() {
     e.dataTransfer.setData("id", id);
   };
 
-  const onDropOpp = async (e: React.DragEvent, newStage: string) => {
-    e.preventDefault();
-    const id = e.dataTransfer.getData("id");
+  // --- MOVE HANDLERS (shared by drag-drop and mobile modal) ---
+  const handleMoveOpportunity = async (id: string, newStage: string) => {
     const opp = opportunities.find((o) => o.id === id);
     if (!opp || opp.status === newStage) return;
 
@@ -1598,9 +1636,7 @@ export default function App() {
     setLogs(await db.getLogs()); // Refresh logs
   };
 
-  const onDropContact = async (e: React.DragEvent, newStage: string) => {
-    e.preventDefault();
-    const id = e.dataTransfer.getData("id");
+  const handleMoveContact = async (id: string, newStage: string) => {
     const contact = contacts.find((c) => c.id === id);
     if (!contact || contact.status === newStage) return;
 
@@ -1613,6 +1649,18 @@ export default function App() {
     );
     await db.updateContact(id, { status: newStage });
     setLogs(await db.getLogs());
+  };
+
+  const onDropOpp = async (e: React.DragEvent, newStage: string) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData("id");
+    await handleMoveOpportunity(id, newStage);
+  };
+
+  const onDropContact = async (e: React.DragEvent, newStage: string) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData("id");
+    await handleMoveContact(id, newStage);
   };
 
   const createRecord = async () => {
@@ -1629,6 +1677,7 @@ export default function App() {
             : "ACCEPTED", // MODIFIED DEFAULT
         priority: "medium",
         updated_at: new Date().toISOString(),
+        url: newOppData.url || undefined,
       };
       await db.createOpportunity(newOpp);
       setOpportunities((p) => [...p, newOpp]);
@@ -1649,7 +1698,7 @@ export default function App() {
     setLogs(await db.getLogs());
     setShowAddRecord(false);
     // Reset forms
-    setNewOppData({ title: "", company: "", pipeline: "discovery" });
+    setNewOppData({ title: "", company: "", pipeline: "discovery", url: "" });
     setNewContactData({ name: "", role: "", company: "" });
   };
 
@@ -2584,6 +2633,7 @@ export default function App() {
                     onDelete={handleDeleteOpp}
                     onConvert={handleConvertToApplication}
                     onDragOver={(e: any) => e.preventDefault()}
+                    onMoveClick={(item: any) => setMoveModal({ open: true, item, pipelineType: 'discovery' })}
                   />
                 ))}
               {view === "pipeline2" &&
@@ -2600,6 +2650,7 @@ export default function App() {
                     onEdit={handleEditRecord}
                     onDelete={handleDeleteOpp}
                     onDragOver={(e: any) => e.preventDefault()}
+                    onMoveClick={(item: any) => setMoveModal({ open: true, item, pipelineType: 'application' })}
                   />
                 ))}
               {view === "pipeline3" &&
@@ -2613,8 +2664,9 @@ export default function App() {
                     onScheduleTask={openTaskModal}
                     onEdit={handleEditRecord}
                     onDelete={handleDeleteContact}
-                    onConvert={handleConvertNetworkingToApplication} // NEW PROP
+                    onConvert={handleConvertNetworkingToApplication}
                     onDragOver={(e: any) => e.preventDefault()}
+                    onMoveClick={(item: any) => setMoveModal({ open: true, item, pipelineType: 'networking' })}
                   />
                 ))}
             </div>
@@ -3291,6 +3343,22 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+
+                {/* Job URL */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                    Job URL (Optional)
+                  </label>
+                  <input
+                    type="url"
+                    className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                    placeholder="https://company.com/careers/job-123"
+                    value={newOppData.url}
+                    onChange={(e) =>
+                      setNewOppData({ ...newOppData, url: e.target.value })
+                    }
+                  />
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -3730,6 +3798,24 @@ export default function App() {
                 </select>
               </div>
 
+              {/* Job URL - for opportunities only */}
+              {!editingRecord.role_title && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                    Job URL
+                  </label>
+                  <input
+                    type="url"
+                    className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                    placeholder="https://company.com/careers/job-123"
+                    value={editForm.url || ""}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, url: e.target.value })
+                    }
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
                   Notes / Description
@@ -3763,6 +3849,70 @@ export default function App() {
                 Save Changes
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MOBILE MOVE MODAL */}
+      {moveModal?.open && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-lg text-slate-800">
+                Move "{moveModal.item?.title || moveModal.item?.name}"
+              </h3>
+              <button
+                onClick={() => setMoveModal(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {(moveModal.pipelineType === "discovery"
+                ? STAGES_DISCOVERY
+                : moveModal.pipelineType === "application"
+                  ? STAGES_APPLICATION
+                  : STAGES_NETWORKING
+              ).map((stage) => {
+                const isCurrentStage = moveModal.item?.status === stage;
+                const formattedStage = stage.replace(/_/g, " ");
+                return (
+                  <button
+                    key={stage}
+                    onClick={async () => {
+                      if (!isCurrentStage) {
+                        if (moveModal.pipelineType === "networking") {
+                          await handleMoveContact(moveModal.item.id, stage);
+                        } else {
+                          await handleMoveOpportunity(moveModal.item.id, stage);
+                        }
+                      }
+                      setMoveModal(null);
+                    }}
+                    disabled={isCurrentStage}
+                    className={`w-full p-3 text-left rounded-lg font-medium transition-colors ${
+                      isCurrentStage
+                        ? "bg-blue-50 text-blue-700 border-2 border-blue-200 cursor-default"
+                        : "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200"
+                    }`}
+                  >
+                    <span className="text-sm">{formattedStage}</span>
+                    {isCurrentStage && (
+                      <span className="ml-2 text-xs text-blue-500">(Current)</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setMoveModal(null)}
+              className="w-full mt-6 py-3 text-slate-600 hover:bg-slate-50 rounded-lg font-semibold transition-colors border border-slate-200"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
