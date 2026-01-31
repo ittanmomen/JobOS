@@ -2055,60 +2055,58 @@ export default function App() {
                     Pipeline Health
                   </h3>
                   <div className="space-y-6">
-                    <div>
-                      <div className="flex justify-between text-xs font-bold text-slate-600 mb-2">
-                        <span>Discovery</span>
-                        <span>
-                          {
-                            opportunities.filter(
-                              (o) => o.pipeline === "discovery",
-                            ).length
-                          }
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-slate-400 h-2 rounded-full"
-                          style={{ width: "40%" }}
-                        ></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-xs font-bold text-slate-600 mb-2">
-                        <span>Applications</span>
-                        <span className="text-blue-600">
-                          {
-                            opportunities.filter(
-                              (o) => o.pipeline === "application",
-                            ).length
-                          }
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-blue-500 h-2 rounded-full"
-                          style={{ width: "60%" }}
-                        ></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-xs font-bold text-slate-600 mb-2">
-                        <span>Interviews</span>
-                        <span className="text-emerald-600">
-                          {
-                            opportunities.filter(
-                              (o) => o.status === "INTERVIEWING",
-                            ).length
-                          }
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-emerald-500 h-2 rounded-full"
-                          style={{ width: "20%" }}
-                        ></div>
-                      </div>
-                    </div>
+                    {(() => {
+                      const discoveryCount = opportunities.filter(
+                        (o) => o.pipeline === "discovery",
+                      ).length;
+                      const applicationCount = opportunities.filter(
+                        (o) => o.pipeline === "application",
+                      ).length;
+                      const interviewCount = opportunities.filter(
+                        (o) => o.status === "INTERVIEWING",
+                      ).length;
+                      const maxCount = Math.max(discoveryCount, applicationCount, interviewCount, 1);
+                      return (
+                        <>
+                          <div>
+                            <div className="flex justify-between text-xs font-bold text-slate-600 mb-2">
+                              <span>Discovery</span>
+                              <span>{discoveryCount}</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                              <div
+                                className="bg-slate-400 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${(discoveryCount / maxCount) * 100}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-xs font-bold text-slate-600 mb-2">
+                              <span>Applications</span>
+                              <span className="text-blue-600">{applicationCount}</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                              <div
+                                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${(applicationCount / maxCount) * 100}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-xs font-bold text-slate-600 mb-2">
+                              <span>Interviews</span>
+                              <span className="text-emerald-600">{interviewCount}</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                              <div
+                                className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${(interviewCount / maxCount) * 100}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <div className="mt-8 p-4 bg-blue-50 rounded-xl border border-blue-100">
