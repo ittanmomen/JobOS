@@ -10,6 +10,8 @@ import {
   AlertCircle,
   X,
   ChevronRight,
+  ChevronLeft,
+  Menu,
   MoreHorizontal,
   Calendar,
   Clock,
@@ -719,7 +721,8 @@ const KanbanCard = ({
       : item.priority === "medium"
         ? "bg-amber-100 text-amber-800"
         : "bg-blue-100 text-blue-800";
-  const isContact = !!item.role_title;
+  // Contacts have 'name' property, Opportunities have 'title' property
+  const isContact = 'name' in item && !('pipeline' in item);
 
   return (
     <div
@@ -831,7 +834,7 @@ const KanbanColumn = ({
 
   return (
     <div
-      className="flex-shrink-0 w-72 bg-slate-50/80 rounded-xl mr-4 flex flex-col max-h-full border border-slate-100"
+      className="flex-shrink-0 w-[85vw] md:w-72 snap-center bg-slate-50/80 rounded-xl mr-4 flex flex-col max-h-full border border-slate-100"
       onDragOver={onDragOver}
       onDrop={(e) => onDrop(e, stage)}
     >
@@ -919,7 +922,7 @@ const TaskList = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleTask(task.id, !task.is_completed);
+                    toggleTask(task.id, task.is_completed);
                   }}
                   className={`mt-0.5 w-5 h-5 rounded border mr-3 flex flex-shrink-0 items-center justify-center transition-all ${task.is_completed ? "bg-emerald-500 border-emerald-500" : "border-slate-300 hover:border-blue-500"}`}
                 >
@@ -1138,6 +1141,10 @@ export default function App() {
     | "settings"
   >("dashboard");
   const [profile, setProfile] = useState<Profile | null>(null);
+
+  // UI State
+  const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Settings State
   const [sbUrl, setSbUrl] = useState(SUPABASE_URL);
@@ -1897,84 +1904,122 @@ export default function App() {
   if (!profile)
     return <OnboardingWizard onComplete={handleOnboardingComplete} />;
 
-  const NavItem = ({ id, label, icon: Icon }: any) => (
+  const NavItem = ({ id, label, icon: Icon, collapsed = false }: any) => (
     <button
-      onClick={() => setView(id)}
-      className={`w-full flex items-center px-4 py-3 text-sm font-medium transition-all duration-200 rounded-lg mb-1 ${view === id ? "bg-blue-50 text-blue-700 shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
+      onClick={() => {
+        setView(id);
+        setIsMobileMenuOpen(false); // Auto-close mobile menu
+      }}
+      title={collapsed ? label : undefined}
+      className={`w-full flex items-center ${collapsed ? "justify-center px-2" : "px-4"} py-3 text-sm font-medium transition-all duration-200 rounded-lg mb-1 ${view === id ? "bg-blue-50 text-blue-700 shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
     >
       <Icon
-        className={`w-4 h-4 mr-3 ${view === id ? "text-blue-600" : "text-slate-400"}`}
+        className={`w-4 h-4 ${collapsed ? "" : "mr-3"} ${view === id ? "text-blue-600" : "text-slate-400"}`}
       />
-      {label}
+      {!collapsed && label}
     </button>
   );
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
-      {/* SIDEBAR */}
-      <div className="w-64 bg-white border-r border-slate-200 flex flex-col z-20 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
-        <div className="p-6 pb-2">
-          <div className="flex items-center gap-2 text-blue-700 mb-6">
+      {/* SIDEBAR - Desktop */}
+      <div className={`${isSidebarCollapsed ? "w-20" : "w-64"} bg-white border-r border-slate-200 hidden lg:flex flex-col z-20 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)] transition-all duration-300 ease-in-out`}>
+        <div className={`${isSidebarCollapsed ? "p-3" : "p-6"} pb-2`}>
+          <div className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "gap-2"} text-blue-700 mb-6`}>
             <div className="bg-blue-600 p-1.5 rounded-lg">
               <BarChart className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-xl font-black tracking-tight text-slate-900">
-              JobOS
-            </h1>
+            {!isSidebarCollapsed && (
+              <h1 className="text-xl font-black tracking-tight text-slate-900">
+                JobOS
+              </h1>
+            )}
           </div>
-          <div className="px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 mb-2">
-            <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">
-              Current Focus
-            </p>
-            <p className="text-sm font-bold text-slate-700 truncate">
-              {profile.role_focus[0]}
-            </p>
-          </div>
+          {!isSidebarCollapsed && (
+            <div className="px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 mb-2">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">
+                Current Focus
+              </p>
+              <p className="text-sm font-bold text-slate-700 truncate">
+                {profile.role_focus[0]}
+              </p>
+            </div>
+          )}
         </div>
 
-        <nav className="flex-1 px-4 space-y-0.5 overflow-y-auto">
+        <nav className={`flex-1 ${isSidebarCollapsed ? "px-2" : "px-4"} space-y-0.5 overflow-y-auto`}>
           <NavItem
             id="dashboard"
             label="Command Center"
             icon={LayoutDashboard}
+            collapsed={isSidebarCollapsed}
           />
 
-          <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            Pipelines
-          </div>
-          <NavItem id="pipeline1" label="Discovery" icon={Search} />
-          <NavItem id="pipeline2" label="Applications" icon={Briefcase} />
-          <NavItem id="pipeline3" label="Networking" icon={Network} />
+          {!isSidebarCollapsed && (
+            <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Pipelines
+            </div>
+          )}
+          {isSidebarCollapsed && <div className="pt-4" />}
+          <NavItem id="pipeline1" label="Discovery" icon={Search} collapsed={isSidebarCollapsed} />
+          <NavItem id="pipeline2" label="Applications" icon={Briefcase} collapsed={isSidebarCollapsed} />
+          <NavItem id="pipeline3" label="Networking" icon={Network} collapsed={isSidebarCollapsed} />
 
-          <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            Database
-          </div>
-          <NavItem id="companies" label="Companies" icon={Building2} />
-          <NavItem id="tasks" label="Tasks" icon={CheckSquare} />
+          {!isSidebarCollapsed && (
+            <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Database
+            </div>
+          )}
+          {isSidebarCollapsed && <div className="pt-4" />}
+          <NavItem id="companies" label="Companies" icon={Building2} collapsed={isSidebarCollapsed} />
+          <NavItem id="tasks" label="Tasks" icon={CheckSquare} collapsed={isSidebarCollapsed} />
 
-          <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            Review
-          </div>
-          <NavItem id="review" label="Weekly Analytics" icon={BarChart} />
+          {!isSidebarCollapsed && (
+            <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Review
+            </div>
+          )}
+          {isSidebarCollapsed && <div className="pt-4" />}
+          <NavItem id="review" label="Weekly Analytics" icon={BarChart} collapsed={isSidebarCollapsed} />
 
-          <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            System
-          </div>
-          <NavItem id="settings" label="Settings" icon={Settings} />
+          {!isSidebarCollapsed && (
+            <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              System
+            </div>
+          )}
+          {isSidebarCollapsed && <div className="pt-4" />}
+          <NavItem id="settings" label="Settings" icon={Settings} collapsed={isSidebarCollapsed} />
         </nav>
 
-        <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+        <div className={`${isSidebarCollapsed ? "p-2" : "p-4"} border-t border-slate-100 bg-slate-50/50`}>
+          {/* Toggle Button */}
+          <button
+            onClick={() => setSidebarCollapsed(!isSidebarCollapsed)}
+            className="w-full flex items-center justify-center p-2 mb-3 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isSidebarCollapsed ? (
+              <ChevronRight className="w-5 h-5" />
+            ) : (
+              <ChevronLeft className="w-5 h-5" />
+            )}
+          </button>
+
+          {/* Status Indicator */}
           <div
-            className={`p-3 rounded-lg flex items-center gap-3 border ${isLive ? "bg-emerald-50 text-emerald-800 border-emerald-100" : "bg-amber-50 text-amber-800 border-amber-100"}`}
+            className={`${isSidebarCollapsed ? "p-2 justify-center" : "p-3 gap-3"} rounded-lg flex items-center border ${isLive ? "bg-emerald-50 text-emerald-800 border-emerald-100" : "bg-amber-50 text-amber-800 border-amber-100"}`}
+            title={isSidebarCollapsed ? (isLive ? (authUser ? "Connected" : "Live (Guest)") : "Demo Mode") : undefined}
           >
             <div
-              className={`w-2 h-2 rounded-full animate-pulse ${isLive ? "bg-emerald-500" : "bg-amber-500"}`}
+              className={`w-2 h-2 rounded-full animate-pulse flex-shrink-0 ${isLive ? "bg-emerald-500" : "bg-amber-500"}`}
             />
-            <span className="text-xs font-bold">
-              {isLive ? (authUser ? "Connected" : "Live (Guest)") : "Demo Mode"}
-            </span>
+            {!isSidebarCollapsed && (
+              <span className="text-xs font-bold">
+                {isLive ? (authUser ? "Connected" : "Live (Guest)") : "Demo Mode"}
+              </span>
+            )}
           </div>
-          {authUser && (
+          {authUser && !isSidebarCollapsed && (
             <div className="mt-2 text-xs text-slate-400 text-center truncate">
               {authUser.email}
             </div>
@@ -1982,11 +2027,103 @@ export default function App() {
         </div>
       </div>
 
+      {/* MOBILE DRAWER */}
+      {isMobileMenuOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          {/* Drawer */}
+          <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-2xl flex flex-col lg:hidden">
+            <div className="p-6 pb-2">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2 text-blue-700">
+                  <div className="bg-blue-600 p-1.5 rounded-lg">
+                    <BarChart className="w-5 h-5 text-white" />
+                  </div>
+                  <h1 className="text-xl font-black tracking-tight text-slate-900">
+                    JobOS
+                  </h1>
+                </div>
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 mb-2">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">
+                  Current Focus
+                </p>
+                <p className="text-sm font-bold text-slate-700 truncate">
+                  {profile.role_focus[0]}
+                </p>
+              </div>
+            </div>
+
+            <nav className="flex-1 px-4 space-y-0.5 overflow-y-auto">
+              <NavItem id="dashboard" label="Command Center" icon={LayoutDashboard} />
+
+              <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Pipelines
+              </div>
+              <NavItem id="pipeline1" label="Discovery" icon={Search} />
+              <NavItem id="pipeline2" label="Applications" icon={Briefcase} />
+              <NavItem id="pipeline3" label="Networking" icon={Network} />
+
+              <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Database
+              </div>
+              <NavItem id="companies" label="Companies" icon={Building2} />
+              <NavItem id="tasks" label="Tasks" icon={CheckSquare} />
+
+              <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Review
+              </div>
+              <NavItem id="review" label="Weekly Analytics" icon={BarChart} />
+
+              <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                System
+              </div>
+              <NavItem id="settings" label="Settings" icon={Settings} />
+            </nav>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+              <div
+                className={`p-3 rounded-lg flex items-center gap-3 border ${isLive ? "bg-emerald-50 text-emerald-800 border-emerald-100" : "bg-amber-50 text-amber-800 border-amber-100"}`}
+              >
+                <div
+                  className={`w-2 h-2 rounded-full animate-pulse ${isLive ? "bg-emerald-500" : "bg-amber-500"}`}
+                />
+                <span className="text-xs font-bold">
+                  {isLive ? (authUser ? "Connected" : "Live (Guest)") : "Demo Mode"}
+                </span>
+              </div>
+              {authUser && (
+                <div className="mt-2 text-xs text-slate-400 text-center truncate">
+                  {authUser.email}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* MAIN */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* HEADER */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 z-10">
-          <h2 className="text-lg font-bold text-slate-800">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 z-10">
+          {/* Mobile hamburger menu */}
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg lg:hidden"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <h2 className="hidden lg:block text-lg font-bold text-slate-800">
             {view === "dashboard" && "Daily Command Center"}
             {view === "pipeline1" && "Discovery Pipeline"}
             {view === "pipeline2" && "Application Execution"}
@@ -2007,7 +2144,7 @@ export default function App() {
 
           <div className="flex items-center gap-6">
             {daysUntilDeadline > 0 ? (
-              <div className="flex items-center gap-3 bg-slate-50 px-4 py-1.5 rounded-full border border-slate-100">
+              <div className="hidden sm:flex items-center gap-3 bg-slate-50 px-4 py-1.5 rounded-full border border-slate-100">
                 <div className="flex flex-col items-end">
                   <span className="text-lg font-black text-blue-600 leading-none">
                     {daysUntilDeadline}
@@ -2018,12 +2155,12 @@ export default function App() {
                 </span>
               </div>
             ) : (
-              <span className="text-red-600 font-bold bg-red-50 px-3 py-1 rounded-full text-xs">
+              <span className="hidden sm:inline text-red-600 font-bold bg-red-50 px-3 py-1 rounded-full text-xs">
                 Deadline Passed
               </span>
             )}
 
-            <div className="h-6 w-px bg-slate-200" />
+            <div className="hidden sm:block h-6 w-px bg-slate-200" />
 
             <button
               onClick={() => setShowAddRecord(true)}
@@ -2431,7 +2568,7 @@ export default function App() {
           {(view === "pipeline1" ||
             view === "pipeline2" ||
             view === "pipeline3") && (
-            <div className="h-full flex overflow-x-auto pb-4 items-start">
+            <div className="h-full flex overflow-x-auto snap-x snap-mandatory pb-4 items-start">
               {view === "pipeline1" &&
                 STAGES_DISCOVERY.map((stage) => (
                   <KanbanColumn
@@ -2498,8 +2635,8 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <table className="w-full text-sm text-left">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                <table className="w-full text-sm text-left min-w-[600px]">
                   <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-xs border-b border-slate-200">
                     <tr>
                       <th className="px-6 py-4">Company Name</th>
@@ -2591,8 +2728,8 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <table className="w-full text-sm text-left">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                <table className="w-full text-sm text-left min-w-[700px]">
                   <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-xs border-b border-slate-200">
                     <tr>
                       <th className="px-6 py-4 w-16">Status</th>
@@ -2768,7 +2905,7 @@ export default function App() {
               </div>
 
               {/* STATS OVERVIEW */}
-              <div className="grid grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                     Discovery
@@ -2972,7 +3109,7 @@ export default function App() {
                 <h2 className="text-2xl font-bold text-slate-900 mb-8">
                   Weekly Performance Review
                 </h2>
-                <div className="grid grid-cols-3 gap-6 text-center">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
                   <div className="p-6 bg-slate-50 rounded-xl border border-slate-100">
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">
                       Applications Sent
