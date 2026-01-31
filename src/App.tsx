@@ -1157,6 +1157,15 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
+  // Coach's Tip
+  const [coachTip, setCoachTip] = useState<{
+    situation_summary?: string;
+    what_matters_most_now?: string;
+    action_plan?: string[];
+    encouraging_close?: string;
+  } | null>(null);
+  const [coachTipLoading, setCoachTipLoading] = useState<boolean>(false);
+
   // Modals & Forms
   const [showAddRecord, setShowAddRecord] = useState(false);
   const [newRecordType, setNewRecordType] = useState<"opportunity" | "contact">(
@@ -1449,6 +1458,102 @@ export default function App() {
       new Date(profile.deadline_date).getTime() - new Date().getTime();
     return Math.ceil(diff / (1000 * 3600 * 24));
   }, [profile]);
+
+  // Fetch Coach's Tip from edge function
+  const fetchCoachTip = async () => {
+    setCoachTipLoading(true);
+    try {
+      // Build pipeline summary from current data
+      const pipelineData = {
+        days_remaining: daysUntilDeadline,
+        pipelines: {
+          discovery: {
+            opportunity_found: opportunities.filter(
+              (o) => o.pipeline === "discovery" && o.status === "OPPORTUNITY_FOUND"
+            ).length,
+            opportunity_qualified: opportunities.filter(
+              (o) => o.pipeline === "discovery" && o.status === "OPPORTUNITY_QUALIFIED"
+            ).length,
+          },
+          applications: {
+            accepted: opportunities.filter(
+              (o) => o.pipeline === "application" && o.status === "ACCEPTED"
+            ).length,
+            cv_tailored: opportunities.filter(
+              (o) => o.pipeline === "application" && o.status === "CV_TAILORED"
+            ).length,
+            submitted: opportunities.filter(
+              (o) => o.pipeline === "application" && o.status === "SUBMITTED"
+            ).length,
+            followed_up: opportunities.filter(
+              (o) => o.pipeline === "application" && o.status === "FOLLOWED_UP"
+            ).length,
+            interviewing: opportunities.filter(
+              (o) => o.pipeline === "application" && o.status === "INTERVIEWING"
+            ).length,
+            offer: opportunities.filter(
+              (o) => o.pipeline === "application" && o.status === "OFFER"
+            ).length,
+            rejected: opportunities.filter(
+              (o) => o.pipeline === "application" && o.status === "REJECTED"
+            ).length,
+          },
+          networking: {
+            person_identified: contacts.filter(
+              (c) => c.status === "PERSON_IDENTIFIED"
+            ).length,
+            contacted: contacts.filter((c) => c.status === "CONTACTED").length,
+            conversation_started: contacts.filter(
+              (c) => c.status === "CONVERSATION_STARTED"
+            ).length,
+            referral_or_lead: contacts.filter(
+              (c) => c.status === "REFERRAL_OR_LEAD"
+            ).length,
+            converted_to_opp: contacts.filter(
+              (c) => c.status === "CONVERTED_TO_OPP"
+            ).length,
+          },
+        },
+        locale: navigator.language.split("-")[0] || "en",
+      };
+
+      // Check if Supabase client is available
+      if (!db.supabase) {
+        console.log("Supabase client not available, using fallback tip");
+        setCoachTip(null);
+        return;
+      }
+
+      // Use Supabase client's functions.invoke() to handle CORS properly
+      const { data, error } = await db.supabase.functions.invoke("coach-tip", {
+        body: pipelineData,
+        headers: {
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      });
+
+      if (error) {
+        console.error("Coach tip error:", error);
+        setCoachTip(null);
+      } else {
+        // Response is wrapped: {success: true, data: {...}}
+        const tipData = data?.data || data;
+        setCoachTip(tipData);
+      }
+    } catch (error) {
+      console.error("Failed to fetch coach tip:", error);
+      setCoachTip(null);
+    } finally {
+      setCoachTipLoading(false);
+    }
+  };
+
+  // Fetch coach tip when data changes
+  useEffect(() => {
+    if (profile) {
+      fetchCoachTip();
+    }
+  }, [opportunities, contacts, daysUntilDeadline, profile]);
 
   // Handlers
   const onDragStart = (e: React.DragEvent, id: string) => {
@@ -2110,14 +2215,55 @@ export default function App() {
                   </div>
 
                   <div className="mt-8 p-4 bg-blue-50 rounded-xl border border-blue-100">
-                    <h4 className="text-blue-800 font-bold text-xs uppercase tracking-wide mb-2">
+                    <h4 className="text-blue-800 font-bold text-xs uppercase tracking-wide mb-3">
                       Coach's Tip
                     </h4>
-                    <p className="text-sm text-blue-700 leading-relaxed">
-                      You have <span className="font-bold">2 applications</span>{" "}
-                      in 'CV Tailored'. Move them to 'Submitted' today to hit
-                      your weekly goal.
-                    </p>
+                    {coachTipLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-blue-600">
+                        <div className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
+                        Loading tip...
+                      </div>
+                    ) : coachTip ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-blue-700 leading-relaxed">
+                          {coachTip.situation_summary}
+                        </p>
+                        {coachTip.what_matters_most_now && (
+                          <div>
+                            <p className="text-xs font-bold text-blue-800 uppercase tracking-wide mb-1">
+                              Focus
+                            </p>
+                            <p className="text-sm text-blue-700 leading-relaxed">
+                              {coachTip.what_matters_most_now}
+                            </p>
+                          </div>
+                        )}
+                        {coachTip.action_plan && coachTip.action_plan.length > 0 && (
+                          <div>
+                            <p className="text-xs font-bold text-blue-800 uppercase tracking-wide mb-1">
+                              Action Plan
+                            </p>
+                            <ul className="text-sm text-blue-700 leading-relaxed space-y-1">
+                              {coachTip.action_plan.map((action, idx) => (
+                                <li key={idx} className="flex gap-2">
+                                  <span className="text-blue-400">•</span>
+                                  <span>{action}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {coachTip.encouraging_close && (
+                          <p className="text-sm text-blue-600 italic leading-relaxed pt-2 border-t border-blue-100">
+                            {coachTip.encouraging_close}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-blue-700 leading-relaxed">
+                        Keep pushing forward! Every application counts.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
