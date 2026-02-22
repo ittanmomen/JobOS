@@ -10,16 +10,12 @@ import {
   AlertCircle,
   X,
   ChevronRight,
-  ChevronLeft,
   Menu,
-  ArrowRightLeft,
   MoreHorizontal,
   Calendar,
   Clock,
-  User,
   Building2,
   ExternalLink,
-  CalendarPlus,
   Globe,
   MapPin,
   Trash2,
@@ -29,1148 +25,66 @@ import {
   MessageSquare,
   ArrowLeft,
   Edit,
-  ArrowRight,
   Settings,
   Save,
   Wifi,
   WifiOff,
   LogIn,
   LogOut,
-  Lock,
 } from "lucide-react";
 
-// --- CONFIGURATION ---
-const SUPABASE_URL = "https://zkwleomajcojnlvivppb.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inprd2xlb21hamNvam5sdml2cHBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyMjYwNDAsImV4cCI6MjA4NDgwMjA0MH0.9Npg1-ScaBco3TqiSkEZXMtCzJzF3qeg7WoUP3OaNRQ";
+// Import types
+import type {
+  Profile,
+  Company,
+  Opportunity,
+  Contact,
+  Task,
+  LogEntry,
+  PipelineType,
+} from "./types";
+import {
+  STAGES_DISCOVERY,
+  STAGES_APPLICATION,
+  STAGES_NETWORKING,
+} from "./types";
+
+// Import services
+import {
+  db,
+  getStartOfWeek,
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+} from "./services/DataService";
+
+// Import components
+import { LoginScreen } from "./components/LoginScreen";
+import { OnboardingWizard } from "./components/OnboardingWizard";
+import { TaskList } from "./components/TaskList";
+import { KanbanColumn } from "./components/Kanban/KanbanColumn";
+import { Sidebar } from "./components/Layout/Sidebar";
+import { MobileSidebar } from "./components/Layout/MobileSidebar";
+import { MoveModal } from "./components/Modals/MoveModal";
 
 // Force Demo Mode only if we fail to connect
 let IS_DEMO_MODE = false;
 
-// --- TYPES ---
-
-type PipelineType = "discovery" | "application" | "networking";
-
-const STAGES_DISCOVERY = [
-  "OPPORTUNITY_FOUND",
-  "OPPORTUNITY_QUALIFIED",
-  "ARCHIVED",
-];
-const STAGES_APPLICATION = [
-  "ACCEPTED",
-  "CV_TAILORED",
-  "SUBMITTED",
-  "FOLLOWED_UP",
-  "INTERVIEWING",
-  "OFFER",
-  "REJECTED",
-];
-const STAGES_NETWORKING = [
-  "PERSON_IDENTIFIED",
-  "CONTACTED",
-  "CONVERSATION_STARTED",
-  "REFERRAL_OR_LEAD",
-  "CONVERTED_TO_OPP",
-  "CLOSED",
-];
-
-interface Profile {
-  full_name: string;
-  role_focus: string[];
-  deadline_date: string;
-  weekly_targets: {
-    applications: number;
-    outreaches: number;
-    new_companies: number;
-  };
-}
-
-interface Company {
-  id: string;
-  name: string;
-  website?: string;
-  location?: string;
-  industry?: string;
-  notes?: string;
-  created_at: string;
-}
-
-interface Opportunity {
-  id: string;
-  company_name: string;
-  title: string;
-  status: string;
-  pipeline: PipelineType;
-  priority: "low" | "medium" | "high";
-  updated_at: string;
-  description?: string;
-  url?: string;
-}
-
-interface Contact {
-  id: string;
-  name: string;
-  role_title: string;
-  company_name: string;
-  status: string;
-  notes?: string;
-  updated_at: string;
-}
-
-interface Task {
-  id: string;
-  title: string;
-  due_date: string;
-  is_completed: boolean;
-  related_entity_id?: string;
-  related_entity_name?: string;
-  comments?: string;
-}
-
-interface LogEntry {
-  id: string;
-  action_type: string;
-  created_at: string;
-  details?: string;
-}
-
-// --- MOCK DATA / DEFAULTS ---
-const DEFAULT_PROFILE: Profile = {
-  full_name: "Engineer",
-  role_focus: ["Embedded Systems", "Firmware"],
-  deadline_date: new Date(new Date().getFullYear(), 7, 15)
-    .toISOString()
-    .split("T")[0], // Mid-August
-  weekly_targets: { applications: 5, outreaches: 10, new_companies: 10 },
-};
-
-// --- DATA SERVICE ---
-
-class DataService {
-  supabase: any = null;
-  isLive: boolean = false;
-  user: any = null;
-
-  constructor() {
-    // defer init to useEffect
-  }
-
-  async init() {
-    if (typeof window !== "undefined") {
-      const url = localStorage.getItem("jobcrm_sb_url") || SUPABASE_URL;
-      const key = localStorage.getItem("jobcrm_sb_key") || SUPABASE_ANON_KEY;
-
-      if (url && key) {
-        await this.connect(url, key);
-      }
-    }
-  }
-
-  async connect(url: string, key: string): Promise<boolean> {
-    try {
-      // @ts-ignore
-      if (window.supabase) {
-        // @ts-ignore
-        this.supabase = window.supabase.createClient(url, key);
-
-        // Check session
-        const {
-          data: { session },
-        } = await this.supabase.auth.getSession();
-        this.user = session?.user || null;
-
-        this.isLive = true;
-        IS_DEMO_MODE = false;
-
-        localStorage.setItem("jobcrm_sb_url", url);
-        localStorage.setItem("jobcrm_sb_key", key);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error("Failed to connect to Supabase:", e);
-      this.isLive = false;
-      IS_DEMO_MODE = true;
-      return false;
-    }
-  }
-
-  async login(email: string, pass: string, isSignUp: boolean) {
-    if (!this.supabase)
-      return { data: null, error: { message: "No client connection" } };
-
-    if (isSignUp) {
-      return await this.supabase.auth.signUp({ email, password: pass });
-    } else {
-      return await this.supabase.auth.signInWithPassword({
-        email,
-        password: pass,
-      });
-    }
-  }
-
-  async logout() {
-    if (this.supabase) await this.supabase.auth.signOut();
-    this.user = null;
-  }
-
-  disconnect() {
-    this.supabase = null;
-    this.isLive = false;
-    IS_DEMO_MODE = true;
-    localStorage.removeItem("jobcrm_sb_url");
-    localStorage.removeItem("jobcrm_sb_key");
-  }
-
-  private loadLocal(key: string) {
-    if (typeof window === "undefined") return [];
-    const item = localStorage.getItem(`jobcrm_${key}`);
-    return item ? JSON.parse(item) : [];
-  }
-
-  private saveLocal(key: string, data: any) {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(`jobcrm_${key}`, JSON.stringify(data));
-  }
-
-  // --- CRUD WRAPPERS ---
-
-  // PROFILES
-  async getProfile(): Promise<Profile | null> {
-    if (!this.isLive) {
-      const p = localStorage.getItem("jobcrm_profile");
-      return p ? JSON.parse(p) : null;
-    }
-    const { data } = await this.supabase.from("profiles").select("*").single();
-    return data;
-  }
-
-  async saveProfile(profile: Profile): Promise<void> {
-    if (!this.isLive) {
-      localStorage.setItem("jobcrm_profile", JSON.stringify(profile));
-      return;
-    }
-    const user = await this.supabase.auth.getUser();
-    if (user.data.user) {
-      await this.supabase
-        .from("profiles")
-        .upsert({ ...profile, id: user.data.user.id });
-    }
-  }
-
-  // COMPANIES
-  async getCompanies(): Promise<Company[]> {
-    if (!this.isLive) return this.loadLocal("companies");
-    const { data } = await this.supabase.from("companies").select("*");
-    return data || [];
-  }
-
-  async createCompany(company: Company): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("companies");
-      list.push(company);
-      this.saveLocal("companies", list);
-      await this.logActivity(
-        "new_company",
-        `Added target company: ${company.name}`,
-      );
-      return;
-    }
-    const {
-      data: { user },
-    } = await this.supabase.auth.getUser();
-    if (!user) {
-      console.error("No user logged in, cannot create company");
-      return;
-    }
-    const { error } = await this.supabase
-      .from("companies")
-      .insert({ ...company, user_id: user.id });
-
-    if (error) console.error("Supabase Create Company Error:", error);
-    else
-      await this.logActivity(
-        "new_company",
-        `Added target company: ${company.name}`,
-      );
-  }
-
-  async updateCompany(id: string, updates: Partial<Company>): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("companies");
-      const idx = list.findIndex((c: Company) => c.id === id);
-      if (idx !== -1) {
-        list[idx] = { ...list[idx], ...updates };
-        this.saveLocal("companies", list);
-      }
-      return;
-    }
-    await this.supabase
-      .from("companies")
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id);
-  }
-
-  // OPPORTUNITIES
-  async getOpportunities(): Promise<Opportunity[]> {
-    if (!this.isLive) return this.loadLocal("opportunities");
-    const { data } = await this.supabase.from("opportunities").select("*");
-    return data || [];
-  }
-
-  async createOpportunity(opp: Opportunity): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("opportunities");
-      list.push(opp);
-      this.saveLocal("opportunities", list);
-      await this.logActivity(
-        "created_opp",
-        `New opportunity: ${opp.title} at ${opp.company_name}`,
-      );
-      return;
-    }
-    const {
-      data: { user },
-    } = await this.supabase.auth.getUser();
-    if (!user) return;
-    const { error } = await this.supabase
-      .from("opportunities")
-      .insert({ ...opp, user_id: user.id });
-
-    if (error) console.error("Supabase Create Opp Error:", error);
-    else
-      await this.logActivity(
-        "created_opp",
-        `New opportunity: ${opp.title} at ${opp.company_name}`,
-      );
-  }
-
-  async updateOpportunity(
-    id: string,
-    updates: Partial<Opportunity>,
-  ): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("opportunities");
-      const idx = list.findIndex((o: Opportunity) => o.id === id);
-      if (idx !== -1) {
-        list[idx] = {
-          ...list[idx],
-          ...updates,
-          updated_at: new Date().toISOString(),
-        };
-        this.saveLocal("opportunities", list);
-        if (updates.status)
-          await this.logActivity(
-            "moved_stage",
-            `Moved opp to ${updates.status}`,
-          );
-      }
-      return;
-    }
-    await this.supabase
-      .from("opportunities")
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id);
-    // Explicitly log status changes in Live mode
-    if (updates.status) {
-      await this.logActivity("moved_stage", `Moved opp to ${updates.status}`);
-    }
-  }
-
-  async deleteOpportunity(id: string): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("opportunities").filter(
-        (o: Opportunity) => o.id !== id,
-      );
-      this.saveLocal("opportunities", list);
-      return;
-    }
-    await this.supabase.from("opportunities").delete().eq("id", id);
-  }
-
-  // CONTACTS
-  async getContacts(): Promise<Contact[]> {
-    if (!this.isLive) return this.loadLocal("contacts");
-    const { data } = await this.supabase.from("contacts").select("*");
-    return data || [];
-  }
-
-  async createContact(contact: Contact): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("contacts");
-      list.push(contact);
-      this.saveLocal("contacts", list);
-      await this.logActivity(
-        "created_contact",
-        `Added contact ${contact.name} at ${contact.company_name}`,
-      );
-      return;
-    }
-    const {
-      data: { user },
-    } = await this.supabase.auth.getUser();
-    if (!user) return;
-    const { error } = await this.supabase
-      .from("contacts")
-      .insert({ ...contact, user_id: user.id });
-
-    if (error) console.error("Supabase Create Contact Error:", error);
-    else
-      await this.logActivity(
-        "created_contact",
-        `Added contact ${contact.name} at ${contact.company_name}`,
-      );
-  }
-
-  async updateContact(id: string, updates: Partial<Contact>): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("contacts");
-      const idx = list.findIndex((c: Contact) => c.id === id);
-      if (idx !== -1) {
-        list[idx] = {
-          ...list[idx],
-          ...updates,
-          updated_at: new Date().toISOString(),
-        };
-        this.saveLocal("contacts", list);
-      }
-      return;
-    }
-    await this.supabase
-      .from("contacts")
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id);
-    if (updates.status) {
-      if (updates.status === "CONTACTED")
-        await this.logActivity(
-          "outreach_sent",
-          `Contacted ${updates.name || "contact"}`,
-        );
-    }
-  }
-
-  async deleteContact(id: string): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("contacts").filter(
-        (c: Contact) => c.id !== id,
-      );
-      this.saveLocal("contacts", list);
-      return;
-    }
-    await this.supabase.from("contacts").delete().eq("id", id);
-  }
-
-  // TASKS
-  async getTasks(): Promise<Task[]> {
-    if (!this.isLive) return this.loadLocal("tasks");
-    const { data } = await this.supabase.from("tasks").select("*");
-    return data || [];
-  }
-
-  async createTask(task: Task): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("tasks");
-      list.push(task);
-      this.saveLocal("tasks", list);
-      return;
-    }
-    const {
-      data: { user },
-    } = await this.supabase.auth.getUser();
-    if (!user) return;
-    const { error } = await this.supabase
-      .from("tasks")
-      .insert({ ...task, user_id: user.id });
-    if (error) console.error("Supabase Create Task Error:", error);
-  }
-
-  async updateTask(id: string, updates: Partial<Task>): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("tasks");
-      const idx = list.findIndex((t: Task) => t.id === id);
-      if (idx !== -1) {
-        list[idx] = { ...list[idx], ...updates };
-        this.saveLocal("tasks", list);
-      }
-      return;
-    }
-    await this.supabase
-      .from("tasks")
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", id);
-  }
-
-  async toggleTask(id: string, is_completed: boolean): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("tasks");
-      const idx = list.findIndex((t: Task) => t.id === id);
-      if (idx !== -1) {
-        list[idx].is_completed = is_completed;
-        this.saveLocal("tasks", list);
-        if (is_completed)
-          await this.logActivity("completed_task", "Task completed");
-      }
-      return;
-    }
-    await this.supabase
-      .from("tasks")
-      .update({ is_completed, updated_at: new Date().toISOString() })
-      .eq("id", id);
-    if (is_completed)
-      await this.logActivity("completed_task", "Task completed");
-  }
-
-  async deleteTask(id: string): Promise<void> {
-    if (!this.isLive) {
-      const list = this.loadLocal("tasks").filter((t: Task) => t.id !== id);
-      this.saveLocal("tasks", list);
-      return;
-    }
-    await this.supabase.from("tasks").delete().eq("id", id);
-  }
-
-  // LOGS
-  async getLogs(): Promise<LogEntry[]> {
-    if (!this.isLive) return this.loadLocal("logs").reverse();
-    const { data } = await this.supabase
-      .from("activity_log")
-      .select("*")
-      .order("created_at", { ascending: false });
-    return data || [];
-  }
-
-  async logActivity(type: string, details: string) {
-    if (!this.isLive) {
-      const list = this.loadLocal("logs");
-      list.push({
-        id: crypto.randomUUID(),
-        action_type: type,
-        details,
-        created_at: new Date().toISOString(),
-      });
-      this.saveLocal("logs", list);
-      return;
-    }
-    const {
-      data: { user },
-    } = await this.supabase.auth.getUser();
-    if (!user) return;
-    await this.supabase
-      .from("activity_log")
-      .insert({ action_type: type, details: details, user_id: user.id });
-  }
-}
-
-const db = new DataService();
-
-// --- HELPER FUNCTIONS ---
-
-const getStartOfWeek = () => {
-  const d = new Date();
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is sunday
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
-
-// --- COMPONENTS ---
-
-// 0. LOGIN SCREEN
-const LoginScreen = ({
-  onLogin,
-  onGuest,
-}: {
-  onLogin: (email: string, pass: string, isSignUp: boolean) => Promise<void>;
-  onGuest: () => void;
-}) => {
-  const [email, setEmail] = useState("");
-  const [pass, setPass] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !pass) return;
-    setError("");
-    setLoading(true);
-    try {
-      await onLogin(email, pass, isSignUp);
-    } catch (err: any) {
-      setError(err.message || "Authentication failed");
-    }
-    setLoading(false);
-  };
-
-  return (
-    <div className="flex h-screen bg-slate-50 items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
-        <div className="text-center mb-8">
-          <div className="inline-flex p-3 bg-blue-600 rounded-xl mb-4 shadow-lg shadow-blue-600/20">
-            <BarChart className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-2">
-            JobOS
-          </h1>
-          <p className="text-slate-500">
-            Your personal job search command center.
-          </p>
-        </div>
-
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex items-start gap-2">
-            <AlertCircle size={16} className="mt-0.5 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-              Email Address
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-3.5 text-slate-400 w-5 h-5" />
-              <input
-                type="email"
-                required
-                className="w-full p-3 pl-10 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-              Password
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-3.5 text-slate-400 w-5 h-5" />
-              <input
-                type="password"
-                required
-                minLength={6}
-                className="w-full p-3 pl-10 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-                placeholder="••••••••"
-                value={pass}
-                onChange={(e) => setPass(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span>
-            ) : isSignUp ? (
-              "Create Account"
-            ) : (
-              "Sign In"
-            )}
-            {!loading && <ArrowRight size={18} />}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-sm text-slate-500">
-            {isSignUp ? "Already have an account?" : "Don't have an account?"}
-            <button
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="text-blue-600 font-bold ml-1 hover:underline"
-            >
-              {isSignUp ? "Sign In" : "Sign Up"}
-            </button>
-          </p>
-        </div>
-
-        <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-          <button
-            onClick={onGuest}
-            className="text-xs text-slate-400 font-semibold hover:text-slate-600 hover:underline"
-          >
-            Continue as Guest (Demo Mode)
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// 1. KANBAN CARD
-const KanbanCard = ({
-  item,
-  onDragStart,
-  onScheduleTask,
-  onEdit,
-  onDelete,
-  onConvert,
-  onMoveClick,
-}: {
-  item: any;
-  onDragStart: (e: React.DragEvent, id: string) => void;
-  onScheduleTask: (id: string, name: string, company?: string) => void;
-  onEdit: (item: any) => void;
-  onDelete: (id: string) => void;
-  onConvert?: (item: any) => void;
-  onMoveClick?: (item: any) => void;
-}) => {
-  const priorityColor =
-    item.priority === "high"
-      ? "bg-red-100 text-red-800"
-      : item.priority === "medium"
-        ? "bg-amber-100 text-amber-800"
-        : "bg-blue-100 text-blue-800";
-  // Contacts have 'name' property, Opportunities have 'title' property
-  const isContact = 'name' in item && !('pipeline' in item);
-
-  return (
-    <div
-      draggable
-      onDragStart={(e) => onDragStart(e, item.id)}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        onEdit(item);
-      }}
-      className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-2 cursor-move hover:shadow-md transition-all active:cursor-grabbing group relative hover:border-blue-400"
-    >
-      <div className="flex justify-between items-start mb-2">
-        {!isContact ? (
-          <span
-            className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${priorityColor}`}
-          >
-            {item.priority || "Normal"}
-          </span>
-        ) : (
-          <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-purple-100 text-purple-800">
-            Contact
-          </span>
-        )}
-        <div className="flex items-center gap-2">
-          {/* Mobile Move Button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onMoveClick && onMoveClick(item);
-            }}
-            className="md:hidden text-slate-400 hover:text-blue-600 transition-colors"
-            title="Move to Stage"
-          >
-            <ArrowRightLeft size={14} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onScheduleTask(
-                item.id,
-                item.title || item.name,
-                item.company_name,
-              );
-            }}
-            className="text-slate-400 hover:text-blue-600 transition-colors"
-            title="Schedule Task"
-          >
-            <CalendarPlus size={14} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(item.id);
-            }}
-            className="text-slate-400 hover:text-red-600 transition-colors"
-            title="Delete"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      </div>
-      <h4 className="font-semibold text-slate-800 leading-snug mb-0.5 text-sm">
-        {item.title || item.name}
-      </h4>
-      <p className="text-xs text-slate-500 font-medium flex items-center gap-1">
-        {isContact && <Building2 size={10} />}
-        {item.company_name || item.role_title}
-      </p>
-
-      {/* Job URL Link - only for application opportunities */}
-      {!isContact && item.url && (
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 truncate"
-        >
-          <ExternalLink size={10} />
-          View Job Posting
-        </a>
-      )}
-
-      {/* CONVERT BUTTON FOR QUALIFIED DISCOVERY OPPORTUNITIES */}
-      {!isContact &&
-        item.pipeline === "discovery" &&
-        item.status === "OPPORTUNITY_QUALIFIED" && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onConvert && onConvert(item);
-            }}
-            className="mt-3 w-full py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded flex items-center justify-center gap-1 hover:bg-emerald-100 transition-colors"
-          >
-            Convert to App <ArrowRight size={12} />
-          </button>
-        )}
-
-      {/* CONVERT BUTTON FOR NETWORKING REFERRALS */}
-      {isContact && item.status === "REFERRAL_OR_LEAD" && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onConvert && onConvert(item);
-          }}
-          className="mt-3 w-full py-2 bg-purple-50 border border-purple-200 text-purple-700 text-xs font-bold rounded flex items-center justify-center gap-1 hover:bg-purple-100 transition-colors"
-        >
-          Convert to App <ArrowRight size={12} />
-        </button>
-      )}
-
-      <p className="text-[10px] text-slate-400 mt-2 text-right">
-        {new Date(item.updated_at).toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-        })}
-      </p>
-    </div>
-  );
-};
-
-const KanbanColumn = ({
-  stage,
-  items,
-  onDrop,
-  onDragOver,
-  onDragStart,
-  onScheduleTask,
-  onEdit,
-  onDelete,
-  onConvert,
-  onMoveClick,
-}: any) => {
-  const formattedStage = stage.replace(/_/g, " ");
-
-  return (
-    <div
-      className="flex-shrink-0 w-[85vw] md:w-72 snap-center bg-slate-50/80 rounded-xl mr-4 flex flex-col max-h-full border border-slate-100"
-      onDragOver={onDragOver}
-      onDrop={(e) => onDrop(e, stage)}
-    >
-      <div className="p-3 border-b border-slate-200/60 flex justify-between items-center sticky top-0 rounded-t-xl z-10">
-        <h3 className="font-bold text-slate-600 text-[11px] uppercase tracking-wider">
-          {formattedStage}
-        </h3>
-        <span className="bg-slate-200 text-slate-600 text-[10px] px-1.5 py-0.5 rounded-md font-bold">
-          {items.length}
-        </span>
-      </div>
-      <div className="p-2 overflow-y-auto flex-1 min-h-[150px] scrollbar-thin scrollbar-thumb-slate-200">
-        {items.map((item: any) => (
-          <KanbanCard
-            key={item.id}
-            item={item}
-            onDragStart={onDragStart}
-            onScheduleTask={onScheduleTask}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onConvert={onConvert}
-            onMoveClick={onMoveClick}
-          />
-        ))}
-        {items.length === 0 && (
-          <div className="h-24 border-2 border-dashed border-slate-200 rounded-lg flex items-center justify-center text-slate-400 text-xs font-medium">
-            Drop Here
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const TaskList = ({
-  tasks,
-  toggleTask,
-  onEditTask,
-  opportunities,
-  contacts,
-}: {
-  tasks: Task[];
-  toggleTask: (id: string, status: boolean) => void;
-  onEditTask: (task: Task) => void;
-  opportunities: Opportunity[];
-  contacts: Contact[];
-}) => {
-  const sortedTasks = [...tasks].sort(
-    (a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime(),
-  );
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-      <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-        <h3 className="font-bold text-slate-800 flex items-center gap-2">
-          <CheckSquare className="w-4 h-4 text-blue-500" />
-          Priority Tasks
-        </h3>
-        <span className="text-xs bg-red-100 text-red-700 font-bold px-2 py-1 rounded-full">
-          {tasks.filter((t) => !t.is_completed).length} Due
-        </span>
-      </div>
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-50 p-2">
-        {sortedTasks.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-sm">
-            No pending tasks. Great job!
-          </div>
-        ) : (
-          sortedTasks.slice(0, 7).map((task) => {
-            const isOverdue =
-              new Date(task.due_date) < new Date() && !task.is_completed;
-            const relatedOpp = opportunities.find(
-              (o) => o.id === task.related_entity_id,
-            );
-            const relatedContact = contacts.find(
-              (c) => c.id === task.related_entity_id,
-            );
-            const linkedCompany =
-              relatedOpp?.company_name || relatedContact?.company_name;
-
-            return (
-              <div
-                key={task.id}
-                className="p-3 flex items-start hover:bg-slate-50 rounded-lg transition-colors group"
-              >
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleTask(task.id, task.is_completed);
-                  }}
-                  className={`mt-0.5 w-5 h-5 rounded border mr-3 flex flex-shrink-0 items-center justify-center transition-all ${task.is_completed ? "bg-emerald-500 border-emerald-500" : "border-slate-300 hover:border-blue-500"}`}
-                >
-                  {task.is_completed && (
-                    <CheckSquare className="w-3.5 h-3.5 text-white" />
-                  )}
-                </button>
-                <div
-                  className="flex-1 min-w-0 cursor-pointer"
-                  onClick={() => onEditTask(task)}
-                >
-                  <p
-                    className={`text-sm font-medium truncate ${task.is_completed ? "text-slate-400 line-through" : "text-slate-700 group-hover:text-blue-600 transition-colors"}`}
-                  >
-                    {task.title}
-                  </p>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <div className="flex items-center gap-1 text-slate-400 text-xs">
-                      <Calendar className="w-3 h-3" />
-                      <span
-                        className={isOverdue ? "text-red-600 font-bold" : ""}
-                      >
-                        {new Date(task.due_date).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </span>
-                    </div>
-                    {linkedCompany && (
-                      <span className="text-[10px] text-slate-500 flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 max-w-[100px] truncate">
-                        <Building2 size={8} /> {linkedCompany}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-};
-
-const OnboardingWizard = ({
-  onComplete,
-}: {
-  onComplete: (profile: Profile) => void;
-}) => {
-  const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState<Profile>(DEFAULT_PROFILE);
-
-  const next = () => setStep((s) => s + 1);
-  const update = (field: string, val: any) =>
-    setFormData((p) => ({ ...p, [field]: val }));
-
-  return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-sans">
-      <div className="bg-white max-w-lg w-full rounded-2xl shadow-2xl p-8 border border-slate-100">
-        <div className="mb-8">
-          <div className="flex justify-between text-xs text-slate-400 uppercase tracking-widest font-bold mb-3">
-            <span>Setup Wizard</span>
-            <span>Step {step} of 3</span>
-          </div>
-          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-600 transition-all duration-500 ease-out"
-              style={{ width: `${(step / 3) * 100}%` }}
-            ></div>
-          </div>
-        </div>
-
-        {step === 1 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="space-y-2">
-              <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
-                Focus & Role
-              </h2>
-              <p className="text-slate-500 text-lg">
-                What specific roles are you targeting?
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Primary Role Title
-              </label>
-              <input
-                type="text"
-                className="w-full p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-lg"
-                placeholder="e.g. Embedded Systems Engineer"
-                value={formData.role_focus[0] || ""}
-                onChange={(e) => update("role_focus", [e.target.value])}
-                autoFocus
-              />
-            </div>
-            <button
-              onClick={next}
-              className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"
-            >
-              Next Step
-            </button>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="space-y-2">
-              <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
-                The Deadline
-              </h2>
-              <p className="text-slate-500 text-lg">
-                When do you absolutely need to start?
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Target Date
-              </label>
-              <input
-                type="date"
-                className="w-full p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-lg"
-                value={formData.deadline_date}
-                onChange={(e) => update("deadline_date", e.target.value)}
-              />
-            </div>
-            <div className="p-4 bg-amber-50 text-amber-900 text-sm rounded-xl border border-amber-100 flex gap-3 items-start">
-              <AlertCircle
-                size={20}
-                className="shrink-0 mt-0.5 text-amber-600"
-              />
-              <p className="font-medium">
-                We will enable a countdown timer and pace your daily tasks to
-                ensure you meet this date.
-              </p>
-            </div>
-            <button
-              onClick={next}
-              className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"
-            >
-              Next Step
-            </button>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="space-y-2">
-              <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
-                Weekly Targets
-              </h2>
-              <p className="text-slate-500 text-lg">
-                Volume is key. Set your weekly goals.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50">
-                <label className="block text-xs text-slate-500 uppercase font-bold mb-2">
-                  Applications / Wk
-                </label>
-                <input
-                  type="number"
-                  className="w-full font-bold text-3xl bg-transparent outline-none text-slate-800"
-                  value={formData.weekly_targets.applications}
-                  onChange={(e) =>
-                    update("weekly_targets", {
-                      ...formData.weekly_targets,
-                      applications: parseInt(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50">
-                <label className="block text-xs text-slate-500 uppercase font-bold mb-2">
-                  Outreach Msgs / Wk
-                </label>
-                <input
-                  type="number"
-                  className="w-full font-bold text-3xl bg-transparent outline-none text-slate-800"
-                  value={formData.weekly_targets.outreaches}
-                  onChange={(e) =>
-                    update("weekly_targets", {
-                      ...formData.weekly_targets,
-                      outreaches: parseInt(e.target.value),
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={() => onComplete(formData)}
-              className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/20"
-            >
-              Launch Dashboard
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
+// View type
+type ViewType =
+  | "dashboard"
+  | "companies"
+  | "tasks"
+  | "pipeline1"
+  | "pipeline2"
+  | "pipeline3"
+  | "review"
+  | "analysis"
+  | "settings";
 
 // 5. MAIN APP COMPONENT
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
-  const [view, setView] = useState<
-    | "dashboard"
-    | "companies"
-    | "tasks"
-    | "pipeline1"
-    | "pipeline2"
-    | "pipeline3"
-    | "review"
-    | "analysis"
-    | "settings"
-  >("dashboard");
+  const [view, setView] = useState<ViewType>("dashboard");
   const [profile, setProfile] = useState<Profile | null>(null);
 
   // UI State
@@ -1244,7 +158,7 @@ export default function App() {
   const [moveModal, setMoveModal] = useState<{
     open: boolean;
     item: any;
-    pipelineType: string;
+    pipelineType: PipelineType;
   } | null>(null);
 
   // --- INIT ---
@@ -1505,101 +419,109 @@ export default function App() {
     return Math.ceil(diff / (1000 * 3600 * 24));
   }, [profile]);
 
-  // Fetch Coach's Tip from edge function
-  const fetchCoachTip = async () => {
-    setCoachTipLoading(true);
-    try {
-      // Build pipeline summary from current data
-      const pipelineData = {
-        days_remaining: daysUntilDeadline,
-        pipelines: {
-          discovery: {
-            opportunity_found: opportunities.filter(
-              (o) => o.pipeline === "discovery" && o.status === "OPPORTUNITY_FOUND"
-            ).length,
-            opportunity_qualified: opportunities.filter(
-              (o) => o.pipeline === "discovery" && o.status === "OPPORTUNITY_QUALIFIED"
-            ).length,
-          },
-          applications: {
-            accepted: opportunities.filter(
-              (o) => o.pipeline === "application" && o.status === "ACCEPTED"
-            ).length,
-            cv_tailored: opportunities.filter(
-              (o) => o.pipeline === "application" && o.status === "CV_TAILORED"
-            ).length,
-            submitted: opportunities.filter(
-              (o) => o.pipeline === "application" && o.status === "SUBMITTED"
-            ).length,
-            followed_up: opportunities.filter(
-              (o) => o.pipeline === "application" && o.status === "FOLLOWED_UP"
-            ).length,
-            interviewing: opportunities.filter(
-              (o) => o.pipeline === "application" && o.status === "INTERVIEWING"
-            ).length,
-            offer: opportunities.filter(
-              (o) => o.pipeline === "application" && o.status === "OFFER"
-            ).length,
-            rejected: opportunities.filter(
-              (o) => o.pipeline === "application" && o.status === "REJECTED"
-            ).length,
-          },
-          networking: {
-            person_identified: contacts.filter(
-              (c) => c.status === "PERSON_IDENTIFIED"
-            ).length,
-            contacted: contacts.filter((c) => c.status === "CONTACTED").length,
-            conversation_started: contacts.filter(
-              (c) => c.status === "CONVERSATION_STARTED"
-            ).length,
-            referral_or_lead: contacts.filter(
-              (c) => c.status === "REFERRAL_OR_LEAD"
-            ).length,
-            converted_to_opp: contacts.filter(
-              (c) => c.status === "CONVERTED_TO_OPP"
-            ).length,
-          },
-        },
-        locale: navigator.language.split("-")[0] || "en",
-      };
-
-      // Check if Supabase client is available
-      if (!db.supabase) {
-        console.log("Supabase client not available, using fallback tip");
-        setCoachTip(null);
-        return;
-      }
-
-      // Use Supabase client's functions.invoke() to handle CORS properly
-      const { data, error } = await db.supabase.functions.invoke("coach-tip", {
-        body: pipelineData,
-        headers: {
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-      });
-
-      if (error) {
-        console.error("Coach tip error:", error);
-        setCoachTip(null);
-      } else {
-        // Response is wrapped: {success: true, data: {...}}
-        const tipData = data?.data || data;
-        setCoachTip(tipData);
-      }
-    } catch (error) {
-      console.error("Failed to fetch coach tip:", error);
-      setCoachTip(null);
-    } finally {
-      setCoachTipLoading(false);
-    }
-  };
-
-  // Fetch coach tip when data changes
+  // Fetch coach tip once on initial load (with ignore flag to prevent StrictMode double-fire)
   useEffect(() => {
-    if (profile) {
-      fetchCoachTip();
-    }
-  }, [opportunities, contacts, daysUntilDeadline, profile]);
+    if (!profile) return;
+
+    let ignore = false;
+
+    const fetchCoachTip = async () => {
+      setCoachTipLoading(true);
+      try {
+        // Build pipeline summary from current data
+        const pipelineData = {
+          days_remaining: daysUntilDeadline,
+          pipelines: {
+            discovery: {
+              opportunity_found: opportunities.filter(
+                (o) => o.pipeline === "discovery" && o.status === "OPPORTUNITY_FOUND"
+              ).length,
+              opportunity_qualified: opportunities.filter(
+                (o) => o.pipeline === "discovery" && o.status === "OPPORTUNITY_QUALIFIED"
+              ).length,
+            },
+            applications: {
+              accepted: opportunities.filter(
+                (o) => o.pipeline === "application" && o.status === "ACCEPTED"
+              ).length,
+              cv_tailored: opportunities.filter(
+                (o) => o.pipeline === "application" && o.status === "CV_TAILORED"
+              ).length,
+              submitted: opportunities.filter(
+                (o) => o.pipeline === "application" && o.status === "SUBMITTED"
+              ).length,
+              followed_up: opportunities.filter(
+                (o) => o.pipeline === "application" && o.status === "FOLLOWED_UP"
+              ).length,
+              interviewing: opportunities.filter(
+                (o) => o.pipeline === "application" && o.status === "INTERVIEWING"
+              ).length,
+              offer: opportunities.filter(
+                (o) => o.pipeline === "application" && o.status === "OFFER"
+              ).length,
+              rejected: opportunities.filter(
+                (o) => o.pipeline === "application" && o.status === "REJECTED"
+              ).length,
+            },
+            networking: {
+              person_identified: contacts.filter(
+                (c) => c.status === "PERSON_IDENTIFIED"
+              ).length,
+              contacted: contacts.filter((c) => c.status === "CONTACTED").length,
+              conversation_started: contacts.filter(
+                (c) => c.status === "CONVERSATION_STARTED"
+              ).length,
+              referral_or_lead: contacts.filter(
+                (c) => c.status === "REFERRAL_OR_LEAD"
+              ).length,
+              converted_to_opp: contacts.filter(
+                (c) => c.status === "CONVERTED_TO_OPP"
+              ).length,
+            },
+          },
+          locale: navigator.language.split("-")[0] || "en",
+        };
+
+        // Check if Supabase client is available
+        if (!db.supabase) {
+          console.log("Supabase client not available, using fallback tip");
+          if (!ignore) setCoachTip(null);
+          return;
+        }
+
+        // Use Supabase client's functions.invoke() to handle CORS properly
+        const { data, error } = await db.supabase.functions.invoke("coach-tip", {
+          body: pipelineData,
+          headers: {
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+        });
+
+        if (ignore) return;
+
+        if (error) {
+          console.error("Coach tip error:", error);
+          setCoachTip(null);
+        } else {
+          // Response is wrapped: {success: true, data: {...}}
+          const tipData = data?.data || data;
+          setCoachTip(tipData);
+        }
+      } catch (error) {
+        console.error("Failed to fetch coach tip:", error);
+        if (!ignore) setCoachTip(null);
+      } finally {
+        if (!ignore) setCoachTipLoading(false);
+      }
+    };
+
+    fetchCoachTip();
+
+    return () => {
+      ignore = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
 
   // Handlers
   const onDragStart = (e: React.DragEvent, id: string) => {
@@ -1953,213 +875,29 @@ export default function App() {
   if (!profile)
     return <OnboardingWizard onComplete={handleOnboardingComplete} />;
 
-  const NavItem = ({ id, label, icon: Icon, collapsed = false }: any) => (
-    <button
-      onClick={() => {
-        setView(id);
-        setIsMobileMenuOpen(false); // Auto-close mobile menu
-      }}
-      title={collapsed ? label : undefined}
-      className={`w-full flex items-center ${collapsed ? "justify-center px-2" : "px-4"} py-3 text-sm font-medium transition-all duration-200 rounded-lg mb-1 ${view === id ? "bg-blue-50 text-blue-700 shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
-    >
-      <Icon
-        className={`w-4 h-4 ${collapsed ? "" : "mr-3"} ${view === id ? "text-blue-600" : "text-slate-400"}`}
-      />
-      {!collapsed && label}
-    </button>
-  );
-
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
       {/* SIDEBAR - Desktop */}
-      <div className={`${isSidebarCollapsed ? "w-20" : "w-64"} bg-white border-r border-slate-200 hidden lg:flex flex-col z-20 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)] transition-all duration-300 ease-in-out`}>
-        <div className={`${isSidebarCollapsed ? "p-3" : "p-6"} pb-2`}>
-          <div className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "gap-2"} text-blue-700 mb-6`}>
-            <div className="bg-blue-600 p-1.5 rounded-lg">
-              <BarChart className="w-5 h-5 text-white" />
-            </div>
-            {!isSidebarCollapsed && (
-              <h1 className="text-xl font-black tracking-tight text-slate-900">
-                JobOS
-              </h1>
-            )}
-          </div>
-          {!isSidebarCollapsed && (
-            <div className="px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 mb-2">
-              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">
-                Current Focus
-              </p>
-              <p className="text-sm font-bold text-slate-700 truncate">
-                {profile.role_focus[0]}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <nav className={`flex-1 ${isSidebarCollapsed ? "px-2" : "px-4"} space-y-0.5 overflow-y-auto`}>
-          <NavItem
-            id="dashboard"
-            label="Command Center"
-            icon={LayoutDashboard}
-            collapsed={isSidebarCollapsed}
-          />
-
-          {!isSidebarCollapsed && (
-            <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Pipelines
-            </div>
-          )}
-          {isSidebarCollapsed && <div className="pt-4" />}
-          <NavItem id="pipeline1" label="Discovery" icon={Search} collapsed={isSidebarCollapsed} />
-          <NavItem id="pipeline2" label="Applications" icon={Briefcase} collapsed={isSidebarCollapsed} />
-          <NavItem id="pipeline3" label="Networking" icon={Network} collapsed={isSidebarCollapsed} />
-
-          {!isSidebarCollapsed && (
-            <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Database
-            </div>
-          )}
-          {isSidebarCollapsed && <div className="pt-4" />}
-          <NavItem id="companies" label="Companies" icon={Building2} collapsed={isSidebarCollapsed} />
-          <NavItem id="tasks" label="Tasks" icon={CheckSquare} collapsed={isSidebarCollapsed} />
-
-          {!isSidebarCollapsed && (
-            <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              Review
-            </div>
-          )}
-          {isSidebarCollapsed && <div className="pt-4" />}
-          <NavItem id="review" label="Weekly Analytics" icon={BarChart} collapsed={isSidebarCollapsed} />
-
-          {!isSidebarCollapsed && (
-            <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              System
-            </div>
-          )}
-          {isSidebarCollapsed && <div className="pt-4" />}
-          <NavItem id="settings" label="Settings" icon={Settings} collapsed={isSidebarCollapsed} />
-        </nav>
-
-        <div className={`${isSidebarCollapsed ? "p-2" : "p-4"} border-t border-slate-100 bg-slate-50/50`}>
-          {/* Toggle Button */}
-          <button
-            onClick={() => setSidebarCollapsed(!isSidebarCollapsed)}
-            className="w-full flex items-center justify-center p-2 mb-3 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {isSidebarCollapsed ? (
-              <ChevronRight className="w-5 h-5" />
-            ) : (
-              <ChevronLeft className="w-5 h-5" />
-            )}
-          </button>
-
-          {/* Status Indicator */}
-          <div
-            className={`${isSidebarCollapsed ? "p-2 justify-center" : "p-3 gap-3"} rounded-lg flex items-center border ${isLive ? "bg-emerald-50 text-emerald-800 border-emerald-100" : "bg-amber-50 text-amber-800 border-amber-100"}`}
-            title={isSidebarCollapsed ? (isLive ? (authUser ? "Connected" : "Live (Guest)") : "Demo Mode") : undefined}
-          >
-            <div
-              className={`w-2 h-2 rounded-full animate-pulse flex-shrink-0 ${isLive ? "bg-emerald-500" : "bg-amber-500"}`}
-            />
-            {!isSidebarCollapsed && (
-              <span className="text-xs font-bold">
-                {isLive ? (authUser ? "Connected" : "Live (Guest)") : "Demo Mode"}
-              </span>
-            )}
-          </div>
-          {authUser && !isSidebarCollapsed && (
-            <div className="mt-2 text-xs text-slate-400 text-center truncate">
-              {authUser.email}
-            </div>
-          )}
-        </div>
-      </div>
+      <Sidebar
+        view={view}
+        setView={setView}
+        profile={profile}
+        isLive={isLive}
+        authUser={authUser}
+        isSidebarCollapsed={isSidebarCollapsed}
+        setSidebarCollapsed={setSidebarCollapsed}
+      />
 
       {/* MOBILE DRAWER */}
-      {isMobileMenuOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-          {/* Drawer */}
-          <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-2xl flex flex-col lg:hidden">
-            <div className="p-6 pb-2">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2 text-blue-700">
-                  <div className="bg-blue-600 p-1.5 rounded-lg">
-                    <BarChart className="w-5 h-5 text-white" />
-                  </div>
-                  <h1 className="text-xl font-black tracking-tight text-slate-900">
-                    JobOS
-                  </h1>
-                </div>
-                <button
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 mb-2">
-                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">
-                  Current Focus
-                </p>
-                <p className="text-sm font-bold text-slate-700 truncate">
-                  {profile.role_focus[0]}
-                </p>
-              </div>
-            </div>
-
-            <nav className="flex-1 px-4 space-y-0.5 overflow-y-auto">
-              <NavItem id="dashboard" label="Command Center" icon={LayoutDashboard} />
-
-              <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Pipelines
-              </div>
-              <NavItem id="pipeline1" label="Discovery" icon={Search} />
-              <NavItem id="pipeline2" label="Applications" icon={Briefcase} />
-              <NavItem id="pipeline3" label="Networking" icon={Network} />
-
-              <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Database
-              </div>
-              <NavItem id="companies" label="Companies" icon={Building2} />
-              <NavItem id="tasks" label="Tasks" icon={CheckSquare} />
-
-              <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Review
-              </div>
-              <NavItem id="review" label="Weekly Analytics" icon={BarChart} />
-
-              <div className="px-4 pt-6 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                System
-              </div>
-              <NavItem id="settings" label="Settings" icon={Settings} />
-            </nav>
-
-            <div className="p-4 border-t border-slate-100 bg-slate-50/50">
-              <div
-                className={`p-3 rounded-lg flex items-center gap-3 border ${isLive ? "bg-emerald-50 text-emerald-800 border-emerald-100" : "bg-amber-50 text-amber-800 border-amber-100"}`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full animate-pulse ${isLive ? "bg-emerald-500" : "bg-amber-500"}`}
-                />
-                <span className="text-xs font-bold">
-                  {isLive ? (authUser ? "Connected" : "Live (Guest)") : "Demo Mode"}
-                </span>
-              </div>
-              {authUser && (
-                <div className="mt-2 text-xs text-slate-400 text-center truncate">
-                  {authUser.email}
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+      <MobileSidebar
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        view={view}
+        setView={setView}
+        profile={profile}
+        isLive={isLive}
+        authUser={authUser}
+      />
 
       {/* MAIN */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -3854,68 +2592,12 @@ export default function App() {
       )}
 
       {/* MOBILE MOVE MODAL */}
-      {moveModal?.open && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-lg text-slate-800">
-                Move "{moveModal.item?.title || moveModal.item?.name}"
-              </h3>
-              <button
-                onClick={() => setMoveModal(null)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {(moveModal.pipelineType === "discovery"
-                ? STAGES_DISCOVERY
-                : moveModal.pipelineType === "application"
-                  ? STAGES_APPLICATION
-                  : STAGES_NETWORKING
-              ).map((stage) => {
-                const isCurrentStage = moveModal.item?.status === stage;
-                const formattedStage = stage.replace(/_/g, " ");
-                return (
-                  <button
-                    key={stage}
-                    onClick={async () => {
-                      if (!isCurrentStage) {
-                        if (moveModal.pipelineType === "networking") {
-                          await handleMoveContact(moveModal.item.id, stage);
-                        } else {
-                          await handleMoveOpportunity(moveModal.item.id, stage);
-                        }
-                      }
-                      setMoveModal(null);
-                    }}
-                    disabled={isCurrentStage}
-                    className={`w-full p-3 text-left rounded-lg font-medium transition-colors ${
-                      isCurrentStage
-                        ? "bg-blue-50 text-blue-700 border-2 border-blue-200 cursor-default"
-                        : "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200"
-                    }`}
-                  >
-                    <span className="text-sm">{formattedStage}</span>
-                    {isCurrentStage && (
-                      <span className="ml-2 text-xs text-blue-500">(Current)</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={() => setMoveModal(null)}
-              className="w-full mt-6 py-3 text-slate-600 hover:bg-slate-50 rounded-lg font-semibold transition-colors border border-slate-200"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      <MoveModal
+        moveModal={moveModal}
+        setMoveModal={setMoveModal}
+        onMoveOpportunity={handleMoveOpportunity}
+        onMoveContact={handleMoveContact}
+      />
     </div>
   );
 }
