@@ -186,7 +186,6 @@ export default function App() {
 
   const loadData = async () => {
     const p = await db.getProfile();
-    setProfile(p);
     if (p) {
       const [opps, cts, comps, tks, lgs] = await Promise.all([
         db.getOpportunities(),
@@ -201,6 +200,7 @@ export default function App() {
       setTasks(tks);
       setLogs(lgs);
     }
+    setProfile(p);
     setIsLoading(false);
   };
 
